@@ -4,6 +4,7 @@
   let target1 = $state(4);
   let target2 = $state(8);
   let useSecondTarget = $state(true);
+  let disabledTotals = $state(new Set());
 
   // Panel 1: Cartes → Cibles
   let validCombinations = $derived(() => {
@@ -85,10 +86,13 @@
       }
     });
 
+    // Filtrer les combos dont le total est désactivé
+    const activeCombos = allCombos.filter(combo => !disabledTotals.has(combo.totalNeeded));
+
     const fusionLevels = new Set();
     const xyzRanks = new Map();
     
-    allCombos.forEach(combo => {
+    activeCombos.forEach(combo => {
       fusionLevels.add(combo.fusionLevel);
       xyzRanks.set(combo.xyzRank, Math.max(xyzRanks.get(combo.xyzRank) || 0, 2));
     });
@@ -298,12 +302,25 @@
 
           <!-- Plages couvertes -->
           <div class="mt-2 text-xs text-gray-400">
-            Cartes couvertes: 
+            Cartes couvertes <span class="text-gray-500">(clic pour désactiver)</span>: 
             <div class="flex flex-wrap gap-1 mt-1">
               {#each extraDeckBuilder().coveredTotals as n}
-                <span class="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">
+                <button
+                  onclick={() => {
+                    const newSet = new Set(disabledTotals);
+                    if (newSet.has(n)) {
+                      newSet.delete(n);
+                    } else {
+                      newSet.add(n);
+                    }
+                    disabledTotals = newSet;
+                  }}
+                  class="px-1.5 py-0.5 rounded cursor-pointer transition-all {disabledTotals.has(n) 
+                    ? 'bg-gray-700 text-gray-500 line-through opacity-50' 
+                    : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'}"
+                >
                   {n}
-                </span>
+                </button>
               {/each}
             </div>
           </div>

@@ -1,14 +1,75 @@
-<script>
+<script lang="ts">
+  import { SvelteSet, SvelteMap } from 'svelte/reactivity';
+  import { OverlayScrollbars } from 'overlayscrollbars';
+  import 'overlayscrollbars/overlayscrollbars.css';
+  import type { Action } from 'svelte/action';
+
+  // OverlayScrollbars action
+  const scrollbar: Action<HTMLElement> = (node) => {
+    const instance = OverlayScrollbars(node, {
+      scrollbars: {
+        theme: 'os-theme-custom',
+        autoHide: 'scroll',
+        autoHideDelay: 800,
+        clickScroll: true
+      },
+      overflow: {
+        x: 'hidden'
+      }
+    });
+
+    return {
+      destroy() {
+        instance.destroy();
+      }
+    };
+  };
+
+  // Types
+  interface Combination {
+    fusionLevel: number;
+    xyzRank: number;
+    target: number;
+  }
+
+  interface Prerequis {
+    fusionLevel: number;
+    xyzRank: number;
+    totalNeeded: number;
+  }
+
+  interface ExtraDeckCombo {
+    target: number;
+    fusionLevel: number;
+    xyzRank: number;
+    totalNeeded: number;
+  }
+
+  interface ExtraDeckCard {
+    type: 'Fusion' | 'Xyz';
+    level: number | null;
+    rank: number | null;
+    label: string;
+  }
+
+  interface ExtraDeckBuilderResult {
+    extraDeck: ExtraDeckCard[];
+    totalCards: number;
+    combos: ExtraDeckCombo[];
+    coveredTotals: number[];
+    overflow: boolean;
+  }
+
   let totalCards = $state(10);
   let targetLevel = $state(6);
   let target1 = $state(4);
   let target2 = $state(8);
   let useSecondTarget = $state(true);
-  let disabledTotals = $state(new Set());
+  let disabledTotals = new SvelteSet<number>();
 
   // Panel 1: Cartes → Cibles
-  let validCombinations = $derived(() => {
-    const results = [];
+  let validCombinations = $derived.by((): Combination[] => {
+    const results: Combination[] = [];
     
     for (let fusionLevel = 1; fusionLevel <= 12; fusionLevel++) {
       const remainder = totalCards - fusionLevel;
@@ -32,9 +93,9 @@
   });
 
   // Grouper par cible pour Panel 1
-  let groupedByTarget = $derived(() => {
-    const groups = {};
-    validCombinations().forEach(combo => {
+  let groupedByTarget = $derived.by((): Record<number, Combination[]> => {
+    const groups: Record<number, Combination[]> = {};
+    validCombinations.forEach(combo => {
       if (!groups[combo.target]) {
         groups[combo.target] = [];
       }
@@ -43,13 +104,13 @@
     return groups;
   });
 
-  let targets = $derived(() => {
-    return Object.keys(groupedByTarget()).map(Number).sort((a, b) => a - b);
+  let targets = $derived.by((): number[] => {
+    return Object.keys(groupedByTarget).map(Number).sort((a, b) => a - b);
   });
 
   // Panel 2: Cible → Prérequis
-  let prerequisByTarget = $derived(() => {
-    const results = [];
+  let prerequisByTarget = $derived.by((): Prerequis[] => {
+    const results: Prerequis[] = [];
     
     for (let fusionLevel = 1; fusionLevel < targetLevel && fusionLevel <= 12; fusionLevel++) {
       const xyzRank = targetLevel - fusionLevel;
@@ -67,9 +128,9 @@
   });
 
   // Panel 3: Extra Deck Builder
-  let extraDeckBuilder = $derived(() => {
+  let extraDeckBuilder = $derived.by((): ExtraDeckBuilderResult => {
     const targetsList = useSecondTarget ? [target1, target2] : [target1];
-    const allCombos = [];
+    const allCombos: ExtraDeckCombo[] = [];
     
     targetsList.forEach(target => {
       for (let fusionLevel = 1; fusionLevel < target && fusionLevel <= 12; fusionLevel++) {
@@ -89,15 +150,15 @@
     // Filtrer les combos dont le total est désactivé
     const activeCombos = allCombos.filter(combo => !disabledTotals.has(combo.totalNeeded));
 
-    const fusionLevels = new Set();
-    const xyzRanks = new Map();
+    const fusionLevels = new SvelteSet<number>();
+    const xyzRanks = new SvelteMap<number, number>();
     
     activeCombos.forEach(combo => {
       fusionLevels.add(combo.fusionLevel);
       xyzRanks.set(combo.xyzRank, Math.max(xyzRanks.get(combo.xyzRank) || 0, 2));
     });
 
-    const extraDeck = [];
+    const extraDeck: ExtraDeckCard[] = [];
     
     [...fusionLevels].sort((a, b) => a - b).forEach(level => {
       extraDeck.push({ type: 'Fusion', level, rank: null, label: `Fusion Niv.${level}` });
@@ -108,7 +169,7 @@
       extraDeck.push({ type: 'Xyz', level: null, rank, label: `Xyz Rang ${rank}` });
     });
 
-    const coveredTotals = new Set();
+    const coveredTotals = new SvelteSet<number>();
     allCombos.forEach(combo => {
       coveredTotals.add(combo.totalNeeded);
     });
@@ -126,7 +187,7 @@
   const quickTargets = [2, 4, 6, 8, 10, 12];
 </script>
 
-<div class="min-h-screen bg-gradient-to-b from-gray-900 to-purple-950 p-3 text-white">
+<div class="min-h-screen bg-linear-to-b from-gray-900 to-purple-950 p-3 text-white">
   <div class="max-w-6xl mx-auto">
     
     <!-- Header -->
@@ -153,7 +214,7 @@
         />
         
         <div class="flex gap-1 mt-2 flex-wrap">
-          {#each quickTotals as n}
+          {#each quickTotals as n (n)}
             <button
               onclick={() => totalCards = n}
               class="px-2 py-0.5 rounded text-xs transition-all {totalCards === n 
@@ -165,15 +226,15 @@
           {/each}
         </div>
 
-        <div class="mt-3 space-y-1 max-h-52 overflow-y-auto pr-1">
-          {#if validCombinations().length === 0}
+        <div use:scrollbar class="mt-3 space-y-1 max-h-52 overflow-y-auto pr-1">
+          {#if validCombinations.length === 0}
             <div class="text-center text-red-400 py-2 text-xs">∅ Aucune combinaison</div>
           {:else}
-            {#each targets() as target}
+            {#each targets as target (target)}
               <div class="bg-gray-900/50 rounded-lg overflow-hidden">
                 <div class="bg-pink-600/80 px-2 py-0.5 text-xs font-bold">◆ Cible {target}</div>
                 <div class="p-1.5 space-y-0.5">
-                  {#each groupedByTarget()[target] as combo}
+                  {#each groupedByTarget[target] as combo (`${combo.fusionLevel}-${combo.xyzRank}`)}
                     <div class="flex items-center gap-1 text-xs">
                       <span class="text-yellow-400">F{combo.fusionLevel}</span>
                       <span class="text-gray-500">+</span>
@@ -204,7 +265,7 @@
         />
         
         <div class="flex gap-1 mt-2 flex-wrap">
-          {#each quickTargets as n}
+          {#each quickTargets as n (n)}
             <button
               onclick={() => targetLevel = n}
               class="px-2 py-0.5 rounded text-xs transition-all {targetLevel === n 
@@ -216,11 +277,11 @@
           {/each}
         </div>
 
-        <div class="mt-3 space-y-1 max-h-52 overflow-y-auto pr-1">
-          {#if prerequisByTarget().length === 0}
+        <div use:scrollbar class="mt-3 space-y-1 max-h-52 overflow-y-auto pr-1">
+          {#if prerequisByTarget.length === 0}
             <div class="text-center text-red-400 py-2 text-xs">∅ Aucune combinaison</div>
           {:else}
-            {#each prerequisByTarget() as combo}
+            {#each prerequisByTarget as combo (`${combo.fusionLevel}-${combo.xyzRank}`)}
               <div class="bg-gray-900/50 rounded-lg overflow-hidden">
                 <div class="bg-cyan-600/80 px-2 py-0.5 text-xs font-bold">Σ {combo.totalNeeded} cartes</div>
                 <div class="p-1.5">
@@ -279,16 +340,16 @@
 
         <!-- Extra Deck généré -->
         <div class="mt-3">
-          <div class="text-xs mb-1 {extraDeckBuilder().overflow ? 'text-red-400' : 'text-gray-400'}">
-            Extra Deck: {extraDeckBuilder().totalCards}/15 cartes
-            {#if extraDeckBuilder().overflow}
+          <div class="text-xs mb-1 {extraDeckBuilder.overflow ? 'text-red-400' : 'text-gray-400'}">
+            Extra Deck: {extraDeckBuilder.totalCards}/15 cartes
+            {#if extraDeckBuilder.overflow}
               <span class="text-red-400">! Dépasse 15</span>
             {/if}
           </div>
           
-          <div class="bg-gray-900/70 rounded-lg p-2 max-h-32 overflow-y-auto">
+          <div use:scrollbar class="bg-gray-900/70 rounded-lg p-2 max-h-32 overflow-y-auto">
             <div class="grid grid-cols-2 gap-1">
-              {#each extraDeckBuilder().extraDeck as card}
+              {#each extraDeckBuilder.extraDeck as card, i (i)}
                 <div 
                   class="text-xs px-1.5 py-0.5 rounded {card.type === 'Fusion' 
                     ? 'bg-yellow-500/20 text-yellow-400' 
@@ -304,16 +365,14 @@
           <div class="mt-2 text-xs text-gray-400">
             Cartes couvertes <span class="text-gray-500">(clic pour désactiver)</span>: 
             <div class="flex flex-wrap gap-1 mt-1">
-              {#each extraDeckBuilder().coveredTotals as n}
+              {#each extraDeckBuilder.coveredTotals as n (n)}
                 <button
                   onclick={() => {
-                    const newSet = new Set(disabledTotals);
-                    if (newSet.has(n)) {
-                      newSet.delete(n);
+                    if (disabledTotals.has(n)) {
+                      disabledTotals.delete(n);
                     } else {
-                      newSet.add(n);
+                      disabledTotals.add(n);
                     }
-                    disabledTotals = newSet;
                   }}
                   class="px-1.5 py-0.5 rounded cursor-pointer transition-all {disabledTotals.has(n) 
                     ? 'bg-gray-700 text-gray-500 line-through opacity-50' 
@@ -341,5 +400,35 @@
   :global(body) {
     margin: 0;
     padding: 0;
+  }
+
+  /* OverlayScrollbars Custom Theme */
+  :global(.os-theme-custom) {
+    --os-handle-bg: rgba(168, 85, 247, 0.4);
+    --os-handle-bg-hover: rgba(168, 85, 247, 0.6);
+    --os-handle-bg-active: rgba(168, 85, 247, 0.8);
+    --os-size: 12px;
+    --os-padding-perpendicular: 2px;
+    --os-padding-axis: 2px;
+    --os-handle-border-radius: 4px;
+  }
+
+  :global(.os-theme-custom .os-scrollbar-handle) {
+    background: var(--os-handle-bg);
+    border-radius: var(--os-handle-border-radius);
+    transition: background 0.2s ease;
+  }
+
+  :global(.os-theme-custom .os-scrollbar-handle:hover) {
+    background: var(--os-handle-bg-hover);
+  }
+
+  :global(.os-theme-custom .os-scrollbar-handle:active) {
+    background: var(--os-handle-bg-active);
+  }
+
+  :global(.os-theme-custom .os-scrollbar-track) {
+    background: rgba(31, 41, 55, 0.5);
+    border-radius: var(--os-handle-border-radius);
   }
 </style>
